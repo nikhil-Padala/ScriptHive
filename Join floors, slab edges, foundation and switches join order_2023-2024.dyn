@@ -1,0 +1,241 @@
+{
+  "Uuid": "43cd3d7f-b4f7-46d1-9ba8-e50af5fbf423",
+  "IsCustomNode": false,
+  "Description": "",
+  "Name": "Join floors and foundation and switches join order",
+  "ElementResolver": {
+    "ResolutionMap": {}
+  },
+  "Inputs": [
+    {
+      "Id": "910ee9d5a0844b3ab9426411de35ef6e",
+      "Name": "Select Model Elements By Category",
+      "Type": "selection",
+      "Type2": "hostSelection",
+      "Value": "eec4f291-4bd4-4a7f-b35f-32243df6d35b-0017daea",
+      "Description": "Select multiple elements from the Revit document filtered by Category.",
+      "SelectedIndex": 0
+    },
+    {
+      "Id": "5557f4ebcf674be19f2efbbcb6f92098",
+      "Name": "Select Model Elements By Category",
+      "Type": "selection",
+      "Type2": "hostSelection",
+      "Value": "",
+      "Description": "Select multiple elements from the Revit document filtered by Category.",
+      "SelectedIndex": 0
+    }
+  ],
+  "Outputs": [],
+  "Nodes": [
+    {
+      "ConcreteType": "PythonNodeModels.PythonNode, PythonNodeModels",
+      "NodeType": "PythonScriptNode",
+      "Code": "import clr\r\nclr.AddReference(\"RevitServices\")\r\nclr.AddReference(\"RevitAPI\")\r\nfrom RevitServices.Persistence import DocumentManager\r\nfrom RevitServices.Transactions import TransactionManager\r\nfrom Autodesk.Revit.DB import *\r\n\r\n# Document\r\ndoc = DocumentManager.Instance.CurrentDBDocument\r\n\r\n# Inputs\r\nfloors_input = IN[0]\r\nslab_edges_input = IN[1]\r\n\r\nfloors = UnwrapElement(floors_input) if isinstance(floors_input, list) else [UnwrapElement(floors_input)]\r\nslab_edges = UnwrapElement(slab_edges_input) if isinstance(slab_edges_input, list) else [UnwrapElement(slab_edges_input)]\r\n\r\n# Collect all structural foundations in the project\r\nfoundations = FilteredElementCollector(doc)\\\r\n    .OfCategory(BuiltInCategory.OST_StructuralFoundation)\\\r\n    .WhereElementIsNotElementType().ToElements()\r\n\r\n# --- Bounding box intersection check ---\r\ndef bounding_boxes_intersect(elem1, elem2):\r\n    try:\r\n        bb1 = elem1.get_BoundingBox(doc.ActiveView)\r\n        bb2 = elem2.get_BoundingBox(doc.ActiveView)\r\n        if bb1 is None or bb2 is None:\r\n            return False\r\n        outline1 = Outline(bb1.Min, bb1.Max)\r\n        outline2 = Outline(bb2.Min, bb2.Max)\r\n        return outline1.Intersects(outline2, 0.01)  # 0.01 = tolerance\r\n    except:\r\n        return False\r\n\r\nTransactionManager.Instance.EnsureInTransaction(doc)\r\nlog = []\r\n\r\n# 1. Floor ↔ Foundation\r\nfor floor in floors:\r\n    for fnd in foundations:\r\n        if bounding_boxes_intersect(floor, fnd):\r\n            try:\r\n                if not JoinGeometryUtils.AreElementsJoined(doc, floor, fnd):\r\n                    JoinGeometryUtils.JoinGeometry(doc, floor, fnd)\r\n                if not JoinGeometryUtils.IsCuttingElementInJoin(doc, floor, fnd):\r\n                    JoinGeometryUtils.SwitchJoinOrder(doc, floor, fnd)\r\n                log.append(f\"✅ Floor {floor.Id} cuts Foundation {fnd.Id}\")\r\n            except:\r\n                log.append(f\"❌ Failed: Floor {floor.Id} ↔ Foundation {fnd.Id}\")\r\n        else:\r\n            log.append(f\"⛔ Skipped (no intersection): Floor {floor.Id} ↔ Foundation {fnd.Id}\")\r\n\r\n# 2. Floor ↔ SlabEdge\r\nfor floor in floors:\r\n    for edge in slab_edges:\r\n        if bounding_boxes_intersect(floor, edge):\r\n            try:\r\n                if not JoinGeometryUtils.AreElementsJoined(doc, floor, edge):\r\n                    JoinGeometryUtils.JoinGeometry(doc, floor, edge)\r\n                if not JoinGeometryUtils.IsCuttingElementInJoin(doc, floor, edge):\r\n                    JoinGeometryUtils.SwitchJoinOrder(doc, floor, edge)\r\n                log.append(f\"✅ Floor {floor.Id} cuts SlabEdge {edge.Id}\")\r\n            except:\r\n                log.append(f\"❌ Failed: Floor {floor.Id} ↔ SlabEdge {edge.Id}\")\r\n        else:\r\n            log.append(f\"⛔ Skipped (no intersection): Floor {floor.Id} ↔ SlabEdge {edge.Id}\")\r\n\r\n# 3. Foundation ↔ SlabEdge\r\nfor fnd in foundations:\r\n    for edge in slab_edges:\r\n        if bounding_boxes_intersect(fnd, edge):\r\n            try:\r\n                if not JoinGeometryUtils.AreElementsJoined(doc, fnd, edge):\r\n                    JoinGeometryUtils.JoinGeometry(doc, fnd, edge)\r\n                if not JoinGeometryUtils.IsCuttingElementInJoin(doc, fnd, edge):\r\n                    JoinGeometryUtils.SwitchJoinOrder(doc, fnd, edge)\r\n                log.append(f\"✅ Foundation {fnd.Id} cuts SlabEdge {edge.Id}\")\r\n            except:\r\n                log.append(f\"❌ Failed: Foundation {fnd.Id} ↔ SlabEdge {edge.Id}\")\r\n        else:\r\n            log.append(f\"⛔ Skipped (no intersection): Foundation {fnd.Id} ↔ SlabEdge {edge.Id}\")\r\n\r\nTransactionManager.Instance.TransactionTaskDone()\r\nOUT = log\r\n",
+      "Engine": "CPython3",
+      "EngineName": "CPython3",
+      "VariableInputPorts": true,
+      "Id": "e1f80c412aa54671ad7b83ab83de62e2",
+      "Inputs": [
+        {
+          "Id": "3ae4ce1d81a1491aa91c8b30ed381985",
+          "Name": "IN[0]",
+          "Description": "Input #0",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "596d52d536bd46a5aeee1406d6717045",
+          "Name": "IN[1]",
+          "Description": "Input #1",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "59929f136fb14e37b36f46c0c8b36b55",
+          "Name": "OUT",
+          "Description": "Result of the python script",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Runs an embedded Python script."
+    },
+    {
+      "ConcreteType": "Dynamo.ComboNodes.DSModelElementsByCategorySelection, DSRevitNodesUI",
+      "SelectedIndex": 246,
+      "SelectedString": "OST_EdgeSlab",
+      "NodeType": "ExtensionNode",
+      "InstanceId": [
+        "eec4f291-4bd4-4a7f-b35f-32243df6d35b-0017daea"
+      ],
+      "Id": "910ee9d5a0844b3ab9426411de35ef6e",
+      "Inputs": [],
+      "Outputs": [
+        {
+          "Id": "e9947284e89b4de3afd76a1e8603c9c7",
+          "Name": "Elements",
+          "Description": "The selected elements.",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled"
+    },
+    {
+      "ConcreteType": "Dynamo.ComboNodes.DSModelElementsByCategorySelection, DSRevitNodesUI",
+      "SelectedIndex": 238,
+      "SelectedString": "OST_Floors",
+      "NodeType": "ExtensionNode",
+      "InstanceId": [],
+      "Id": "5557f4ebcf674be19f2efbbcb6f92098",
+      "Inputs": [],
+      "Outputs": [
+        {
+          "Id": "8f7a31ed2fe542d29d9dbdb0e8d190a4",
+          "Name": "Elements",
+          "Description": "The selected elements.",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled"
+    }
+  ],
+  "Connectors": [
+    {
+      "Start": "e9947284e89b4de3afd76a1e8603c9c7",
+      "End": "596d52d536bd46a5aeee1406d6717045",
+      "Id": "b999b02690474f02b9629b705e956742",
+      "IsHidden": "False"
+    },
+    {
+      "Start": "8f7a31ed2fe542d29d9dbdb0e8d190a4",
+      "End": "3ae4ce1d81a1491aa91c8b30ed381985",
+      "Id": "48ab72a0c7b7428cb44c2f0061e1fa3a",
+      "IsHidden": "False"
+    }
+  ],
+  "Dependencies": [],
+  "NodeLibraryDependencies": [],
+  "Thumbnail": "",
+  "GraphDocumentationURL": null,
+  "ExtensionWorkspaceData": [
+    {
+      "ExtensionGuid": "28992e1d-abb9-417f-8b1b-05e053bee670",
+      "Name": "Properties",
+      "Version": "2.12",
+      "Data": {}
+    },
+    {
+      "ExtensionGuid": "DFBD9CC0-DB40-457A-939E-8C8555555A9D",
+      "Name": "Generative Design",
+      "Version": "1.10",
+      "Data": {}
+    }
+  ],
+  "Author": "",
+  "Linting": {
+    "activeLinter": "None",
+    "activeLinterId": "7b75fb44-43fd-4631-a878-29f4d5d8399a",
+    "warningCount": 0,
+    "errorCount": 0
+  },
+  "Bindings": [],
+  "View": {
+    "Dynamo": {
+      "ScaleFactor": 1.0,
+      "HasRunWithoutCrash": true,
+      "IsVisibleInDynamoLibrary": true,
+      "Version": "2.16.4.10216",
+      "RunType": "Manual",
+      "RunPeriod": "1000"
+    },
+    "Camera": {
+      "Name": "Background Preview",
+      "EyeX": -17.0,
+      "EyeY": 24.0,
+      "EyeZ": 50.0,
+      "LookX": 12.0,
+      "LookY": -13.0,
+      "LookZ": -58.0,
+      "UpX": 0.0,
+      "UpY": 1.0,
+      "UpZ": 0.0
+    },
+    "ConnectorPins": [],
+    "NodeViews": [
+      {
+        "Name": "Python Script",
+        "ShowGeometry": true,
+        "Id": "e1f80c412aa54671ad7b83ab83de62e2",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "X": 590.25385397882042,
+        "Y": 229.93999629453018
+      },
+      {
+        "Name": "Select Model Elements By Category",
+        "ShowGeometry": true,
+        "Id": "910ee9d5a0844b3ab9426411de35ef6e",
+        "IsSetAsInput": true,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "X": 172.92987734525417,
+        "Y": 326.99841729834304
+      },
+      {
+        "Name": "Select Model Elements By Category",
+        "ShowGeometry": true,
+        "Id": "5557f4ebcf674be19f2efbbcb6f92098",
+        "IsSetAsInput": true,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "X": 181.22775713191436,
+        "Y": 76.001324406216639
+      }
+    ],
+    "Annotations": [
+      {
+        "Id": "beaf9855118a47f1b7237f651fa199eb",
+        "Title": "Change join order of SOG and Sub Structure",
+        "DescriptionText": "<Double click here to edit group description>",
+        "IsExpanded": true,
+        "WidthAdjustment": 0.0,
+        "HeightAdjustment": 0.0,
+        "Nodes": [
+          "e1f80c412aa54671ad7b83ab83de62e2",
+          "910ee9d5a0844b3ab9426411de35ef6e",
+          "5557f4ebcf674be19f2efbbcb6f92098"
+        ],
+        "HasNestedGroups": false,
+        "Left": 162.92987734525417,
+        "Top": -39.998675593783361,
+        "Width": 611.32397663356619,
+        "Height": 543.99709289212637,
+        "FontSize": 36.0,
+        "InitialTop": 76.001324406216639,
+        "InitialHeight": 395.99709289212637,
+        "TextblockHeight": 106.0,
+        "Background": "#FFC1D676"
+      }
+    ],
+    "X": 346.38531661380341,
+    "Y": 207.02055278997554,
+    "Zoom": 0.6146401206658294
+  }
+}
